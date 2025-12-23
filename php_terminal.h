@@ -159,16 +159,20 @@ ZEND_BEGIN_MODULE_GLOBALS(terminal)
     zend_class_entry *exception_ce;
     zend_class_entry *progress_bar_ce;
     zend_class_entry *loader_ce;
+    zend_class_entry *color_ce;
+    zend_class_entry *command_ce;
 ZEND_END_MODULE_GLOBALS(terminal)
 
 ZEND_EXTERN_MODULE_GLOBALS(terminal)
 
 #define TERMINAL_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(terminal, v)
 
-/* Exception class entry */
+/* Class entries */
 extern zend_class_entry *terminal_exception_ce;
 extern zend_class_entry *terminal_progress_bar_ce;
 extern zend_class_entry *terminal_loader_ce;
+extern zend_class_entry *terminal_color_ce;
+extern zend_class_entry *terminal_command_ce;
 
 /* Object handlers */
 extern zend_object_handlers progress_bar_handlers;

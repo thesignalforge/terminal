@@ -21,6 +21,8 @@ ZEND_DECLARE_MODULE_GLOBALS(terminal)
 zend_class_entry *terminal_exception_ce = NULL;
 zend_class_entry *terminal_progress_bar_ce = NULL;
 zend_class_entry *terminal_loader_ce = NULL;
+zend_class_entry *terminal_color_ce = NULL;
+zend_class_entry *terminal_command_ce = NULL;
 
 /* Object handlers */
 zend_object_handlers progress_bar_handlers;
@@ -2746,6 +2748,681 @@ static const zend_function_entry loader_methods[] = {
 };
 
 /* ============================================================================
+ * COMMAND CLASS IMPLEMENTATION
+ * ============================================================================ */
+
+/* {{{ proto void Command::__construct()
+   Constructor - initializes command state */
+PHP_METHOD(Command, __construct)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+
+    /* Initialize arguments and options arrays as properties */
+    zval args, opts, arg_values, opt_values;
+    array_init(&args);
+    array_init(&opts);
+    array_init(&arg_values);
+    array_init(&opt_values);
+
+    zend_update_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_arguments", sizeof("_arguments") - 1, &args);
+    zend_update_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_options", sizeof("_options") - 1, &opts);
+    zend_update_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_argValues", sizeof("_argValues") - 1, &arg_values);
+    zend_update_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_optValues", sizeof("_optValues") - 1, &opt_values);
+    zend_update_property_string(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_name", sizeof("_name") - 1, "command");
+    zend_update_property_string(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_description", sizeof("_description") - 1, "");
+
+    zval_ptr_dtor(&args);
+    zval_ptr_dtor(&opts);
+    zval_ptr_dtor(&arg_values);
+    zval_ptr_dtor(&opt_values);
+}
+/* }}} */
+
+/* {{{ proto void Command::setName(string $name)
+   Set command name */
+PHP_METHOD(Command, setName)
+{
+    zend_string *name;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(name)
+    ZEND_PARSE_PARAMETERS_END();
+
+    zend_update_property_str(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_name", sizeof("_name") - 1, name);
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+/* }}} */
+
+/* {{{ proto void Command::setDescription(string $description)
+   Set command description */
+PHP_METHOD(Command, setDescription)
+{
+    zend_string *desc;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(desc)
+    ZEND_PARSE_PARAMETERS_END();
+
+    zend_update_property_str(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_description", sizeof("_description") - 1, desc);
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+/* }}} */
+
+/* {{{ proto self Command::addArgument(string $name, string $description = '', bool $required = true, ?string $default = null)
+   Add a positional argument */
+PHP_METHOD(Command, addArgument)
+{
+    zend_string *name, *description = NULL;
+    zend_bool required = 1;
+    zend_string *default_val = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(1, 4)
+        Z_PARAM_STR(name)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR_OR_NULL(description)
+        Z_PARAM_BOOL(required)
+        Z_PARAM_STR_OR_NULL(default_val)
+    ZEND_PARSE_PARAMETERS_END();
+
+    zval *args = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_arguments", sizeof("_arguments") - 1, 1, NULL);
+
+    zval arg_def;
+    array_init(&arg_def);
+    add_assoc_str(&arg_def, "name", zend_string_copy(name));
+    add_assoc_str(&arg_def, "description", description ? zend_string_copy(description) : zend_string_init("", 0, 0));
+    add_assoc_bool(&arg_def, "required", required);
+    if (default_val) {
+        add_assoc_str(&arg_def, "default", zend_string_copy(default_val));
+    } else {
+        add_assoc_null(&arg_def, "default");
+    }
+
+    add_assoc_zval(args, ZSTR_VAL(name), &arg_def);
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+/* }}} */
+
+/* {{{ proto self Command::addOption(string $name, ?string $shortcut = null, string $description = '', bool $requiresValue = false, ?string $default = null)
+   Add a command option */
+PHP_METHOD(Command, addOption)
+{
+    zend_string *name, *shortcut = NULL, *description = NULL;
+    zend_bool requires_value = 0;
+    zend_string *default_val = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(1, 5)
+        Z_PARAM_STR(name)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR_OR_NULL(shortcut)
+        Z_PARAM_STR_OR_NULL(description)
+        Z_PARAM_BOOL(requires_value)
+        Z_PARAM_STR_OR_NULL(default_val)
+    ZEND_PARSE_PARAMETERS_END();
+
+    zval *opts = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_options", sizeof("_options") - 1, 1, NULL);
+
+    zval opt_def;
+    array_init(&opt_def);
+    add_assoc_str(&opt_def, "name", zend_string_copy(name));
+    if (shortcut) {
+        add_assoc_str(&opt_def, "shortcut", zend_string_copy(shortcut));
+    } else {
+        add_assoc_null(&opt_def, "shortcut");
+    }
+    add_assoc_str(&opt_def, "description", description ? zend_string_copy(description) : zend_string_init("", 0, 0));
+    add_assoc_bool(&opt_def, "requiresValue", requires_value);
+    if (default_val) {
+        add_assoc_str(&opt_def, "default", zend_string_copy(default_val));
+    } else {
+        add_assoc_null(&opt_def, "default");
+    }
+
+    add_assoc_zval(opts, ZSTR_VAL(name), &opt_def);
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+/* }}} */
+
+/* {{{ proto mixed Command::getArgument(string $name)
+   Get argument value */
+PHP_METHOD(Command, getArgument)
+{
+    zend_string *name;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(name)
+    ZEND_PARSE_PARAMETERS_END();
+
+    zval *values = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_argValues", sizeof("_argValues") - 1, 1, NULL);
+
+    zval *val = zend_hash_find(Z_ARRVAL_P(values), name);
+    if (val) {
+        RETURN_ZVAL(val, 1, 0);
+    }
+
+    RETURN_NULL();
+}
+/* }}} */
+
+/* {{{ proto mixed Command::getOption(string $name)
+   Get option value */
+PHP_METHOD(Command, getOption)
+{
+    zend_string *name;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(name)
+    ZEND_PARSE_PARAMETERS_END();
+
+    zval *values = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_optValues", sizeof("_optValues") - 1, 1, NULL);
+
+    zval *val = zend_hash_find(Z_ARRVAL_P(values), name);
+    if (val) {
+        RETURN_ZVAL(val, 1, 0);
+    }
+
+    RETURN_NULL();
+}
+/* }}} */
+
+/* {{{ proto void Command::info(string $message)
+   Output info message */
+PHP_METHOD(Command, info)
+{
+    zend_string *message;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(message)
+    ZEND_PARSE_PARAMETERS_END();
+
+    php_printf("%s\n", ZSTR_VAL(message));
+}
+/* }}} */
+
+/* {{{ proto void Command::success(string $message)
+   Output success message (green) */
+PHP_METHOD(Command, success)
+{
+    zend_string *message;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(message)
+    ZEND_PARSE_PARAMETERS_END();
+
+    php_printf("\033[32m%s\033[0m\n", ZSTR_VAL(message));
+}
+/* }}} */
+
+/* {{{ proto void Command::error(string $message)
+   Output error message (red) */
+PHP_METHOD(Command, error)
+{
+    zend_string *message;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(message)
+    ZEND_PARSE_PARAMETERS_END();
+
+    php_printf("\033[31m%s\033[0m\n", ZSTR_VAL(message));
+}
+/* }}} */
+
+/* {{{ proto void Command::warning(string $message)
+   Output warning message (yellow) */
+PHP_METHOD(Command, warning)
+{
+    zend_string *message;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(message)
+    ZEND_PARSE_PARAMETERS_END();
+
+    php_printf("\033[33m%s\033[0m\n", ZSTR_VAL(message));
+}
+/* }}} */
+
+/* {{{ proto void Command::comment(string $message)
+   Output comment message (dim) */
+PHP_METHOD(Command, comment)
+{
+    zend_string *message;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(message)
+    ZEND_PARSE_PARAMETERS_END();
+
+    php_printf("\033[2m%s\033[0m\n", ZSTR_VAL(message));
+}
+/* }}} */
+
+/* {{{ proto void Command::newLine(int $count = 1)
+   Output blank lines */
+PHP_METHOD(Command, newLine)
+{
+    zend_long count = 1;
+
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(count)
+    ZEND_PARSE_PARAMETERS_END();
+
+    for (zend_long i = 0; i < count; i++) {
+        php_printf("\n");
+    }
+}
+/* }}} */
+
+/* Helper to print help text */
+static void command_print_help(zval *this_ptr)
+{
+    zval *name = zend_read_property(terminal_command_ce, Z_OBJ_P(this_ptr), "_name", sizeof("_name") - 1, 1, NULL);
+    zval *desc = zend_read_property(terminal_command_ce, Z_OBJ_P(this_ptr), "_description", sizeof("_description") - 1, 1, NULL);
+    zval *args = zend_read_property(terminal_command_ce, Z_OBJ_P(this_ptr), "_arguments", sizeof("_arguments") - 1, 1, NULL);
+    zval *opts = zend_read_property(terminal_command_ce, Z_OBJ_P(this_ptr), "_options", sizeof("_options") - 1, 1, NULL);
+
+    /* Description */
+    php_printf("\033[33mDescription:\033[0m\n");
+    if (Z_TYPE_P(desc) == IS_STRING && Z_STRLEN_P(desc) > 0) {
+        php_printf("  %s\n\n", Z_STRVAL_P(desc));
+    } else {
+        php_printf("  (no description)\n\n");
+    }
+
+    /* Usage */
+    php_printf("\033[33mUsage:\033[0m\n");
+    php_printf("  %s", Z_TYPE_P(name) == IS_STRING ? Z_STRVAL_P(name) : "command");
+
+    if (Z_TYPE_P(opts) == IS_ARRAY && zend_hash_num_elements(Z_ARRVAL_P(opts)) > 0) {
+        php_printf(" [options]");
+    }
+
+    if (Z_TYPE_P(args) == IS_ARRAY) {
+        zval *arg;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(args), arg) {
+            zval *aname = zend_hash_str_find(Z_ARRVAL_P(arg), "name", 4);
+            zval *req = zend_hash_str_find(Z_ARRVAL_P(arg), "required", 8);
+            if (aname && Z_TYPE_P(aname) == IS_STRING) {
+                if (req && Z_TYPE_P(req) == IS_TRUE) {
+                    php_printf(" <%s>", Z_STRVAL_P(aname));
+                } else {
+                    php_printf(" [%s]", Z_STRVAL_P(aname));
+                }
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+    php_printf("\n\n");
+
+    /* Arguments */
+    if (Z_TYPE_P(args) == IS_ARRAY && zend_hash_num_elements(Z_ARRVAL_P(args)) > 0) {
+        php_printf("\033[33mArguments:\033[0m\n");
+        zval *arg;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(args), arg) {
+            zval *aname = zend_hash_str_find(Z_ARRVAL_P(arg), "name", 4);
+            zval *adesc = zend_hash_str_find(Z_ARRVAL_P(arg), "description", 11);
+            zval *adef = zend_hash_str_find(Z_ARRVAL_P(arg), "default", 7);
+
+            if (aname && Z_TYPE_P(aname) == IS_STRING) {
+                php_printf("  \033[32m%-20s\033[0m", Z_STRVAL_P(aname));
+                if (adesc && Z_TYPE_P(adesc) == IS_STRING && Z_STRLEN_P(adesc) > 0) {
+                    php_printf(" %s", Z_STRVAL_P(adesc));
+                }
+                if (adef && Z_TYPE_P(adef) == IS_STRING) {
+                    php_printf(" \033[2m[default: %s]\033[0m", Z_STRVAL_P(adef));
+                }
+                php_printf("\n");
+            }
+        } ZEND_HASH_FOREACH_END();
+        php_printf("\n");
+    }
+
+    /* Options */
+    php_printf("\033[33mOptions:\033[0m\n");
+    php_printf("  \033[32m%-20s\033[0m Display this help message\n", "-h, --help");
+
+    if (Z_TYPE_P(opts) == IS_ARRAY) {
+        zval *opt;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(opts), opt) {
+            zval *oname = zend_hash_str_find(Z_ARRVAL_P(opt), "name", 4);
+            zval *oshort = zend_hash_str_find(Z_ARRVAL_P(opt), "shortcut", 8);
+            zval *odesc = zend_hash_str_find(Z_ARRVAL_P(opt), "description", 11);
+            zval *odef = zend_hash_str_find(Z_ARRVAL_P(opt), "default", 7);
+            zval *oreq = zend_hash_str_find(Z_ARRVAL_P(opt), "requiresValue", 13);
+
+            if (oname && Z_TYPE_P(oname) == IS_STRING) {
+                char opt_str[64];
+                if (oshort && Z_TYPE_P(oshort) == IS_STRING && Z_STRLEN_P(oshort) > 0) {
+                    snprintf(opt_str, sizeof(opt_str), "-%s, --%s", Z_STRVAL_P(oshort), Z_STRVAL_P(oname));
+                } else {
+                    snprintf(opt_str, sizeof(opt_str), "    --%s", Z_STRVAL_P(oname));
+                }
+
+                if (oreq && Z_TYPE_P(oreq) == IS_TRUE) {
+                    strncat(opt_str, "=VALUE", sizeof(opt_str) - strlen(opt_str) - 1);
+                }
+
+                php_printf("  \033[32m%-20s\033[0m", opt_str);
+                if (odesc && Z_TYPE_P(odesc) == IS_STRING && Z_STRLEN_P(odesc) > 0) {
+                    php_printf(" %s", Z_STRVAL_P(odesc));
+                }
+                if (odef && Z_TYPE_P(odef) == IS_STRING) {
+                    php_printf(" \033[2m[default: %s]\033[0m", Z_STRVAL_P(odef));
+                }
+                php_printf("\n");
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+}
+
+/* {{{ proto void Command::showHelp()
+   Display help for this command */
+PHP_METHOD(Command, showHelp)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    command_print_help(ZEND_THIS);
+}
+/* }}} */
+
+/* {{{ proto int Command::run(?array $argv = null)
+   Parse arguments and execute the command */
+PHP_METHOD(Command, run)
+{
+    zval *argv = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_ARRAY_OR_NULL(argv)
+    ZEND_PARSE_PARAMETERS_END();
+
+    /* Get argv from global if not provided */
+    zval *global_argv = NULL;
+    if (!argv) {
+        zval *server = zend_hash_str_find(&EG(symbol_table), "_SERVER", sizeof("_SERVER") - 1);
+        if (server && Z_TYPE_P(server) == IS_ARRAY) {
+            global_argv = zend_hash_str_find(Z_ARRVAL_P(server), "argv", 4);
+        }
+        if (!global_argv) {
+            global_argv = zend_hash_str_find(&EG(symbol_table), "argv", 4);
+        }
+        argv = global_argv;
+    }
+
+    if (!argv || Z_TYPE_P(argv) != IS_ARRAY) {
+        zend_throw_exception(terminal_exception_ce, "No argv available", 0);
+        RETURN_LONG(1);
+    }
+
+    /* Call configure() first */
+    zval retval;
+    zend_function *configure_fn = zend_hash_str_find_ptr(&Z_OBJCE_P(ZEND_THIS)->function_table, "configure", sizeof("configure") - 1);
+    if (configure_fn) {
+        zend_call_known_instance_method(configure_fn, Z_OBJ_P(ZEND_THIS), &retval, 0, NULL);
+        zval_ptr_dtor(&retval);
+    }
+
+    /* Get argument and option definitions */
+    zval *arg_defs = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_arguments", sizeof("_arguments") - 1, 1, NULL);
+    zval *opt_defs = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_options", sizeof("_options") - 1, 1, NULL);
+    zval *arg_values = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_argValues", sizeof("_argValues") - 1, 1, NULL);
+    zval *opt_values = zend_read_property(terminal_command_ce, Z_OBJ_P(ZEND_THIS), "_optValues", sizeof("_optValues") - 1, 1, NULL);
+
+    /* Initialize option defaults */
+    if (Z_TYPE_P(opt_defs) == IS_ARRAY) {
+        zval *opt;
+        zend_string *key;
+        ZEND_HASH_FOREACH_STR_KEY_VAL(Z_ARRVAL_P(opt_defs), key, opt) {
+            zval *def = zend_hash_str_find(Z_ARRVAL_P(opt), "default", 7);
+            zval *req = zend_hash_str_find(Z_ARRVAL_P(opt), "requiresValue", 13);
+
+            if (def && Z_TYPE_P(def) == IS_STRING) {
+                zval copy;
+                ZVAL_COPY(&copy, def);
+                zend_hash_update(Z_ARRVAL_P(opt_values), key, &copy);
+            } else if (!req || Z_TYPE_P(req) != IS_TRUE) {
+                /* Boolean option defaults to false */
+                zval fval;
+                ZVAL_FALSE(&fval);
+                zend_hash_update(Z_ARRVAL_P(opt_values), key, &fval);
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    /* Initialize argument defaults */
+    if (Z_TYPE_P(arg_defs) == IS_ARRAY) {
+        zval *arg;
+        zend_string *key;
+        ZEND_HASH_FOREACH_STR_KEY_VAL(Z_ARRVAL_P(arg_defs), key, arg) {
+            zval *def = zend_hash_str_find(Z_ARRVAL_P(arg), "default", 7);
+            if (def && Z_TYPE_P(def) == IS_STRING) {
+                zval copy;
+                ZVAL_COPY(&copy, def);
+                zend_hash_update(Z_ARRVAL_P(arg_values), key, &copy);
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    /* Parse argv */
+    int arg_index = 0;
+    int positional_index = 0;
+
+    zval *val;
+    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(argv), val) {
+        arg_index++;
+        if (arg_index == 1) continue; /* Skip script name */
+
+        if (Z_TYPE_P(val) != IS_STRING) continue;
+
+        char *arg_str = Z_STRVAL_P(val);
+        size_t arg_len = Z_STRLEN_P(val);
+
+        /* Check for --help or -h */
+        if (strcmp(arg_str, "--help") == 0 || strcmp(arg_str, "-h") == 0) {
+            command_print_help(ZEND_THIS);
+            RETURN_LONG(0);
+        }
+
+        /* Long option --name or --name=value */
+        if (arg_len > 2 && arg_str[0] == '-' && arg_str[1] == '-') {
+            char *eq = strchr(arg_str + 2, '=');
+            char opt_name[64];
+            char *opt_val = NULL;
+
+            if (eq) {
+                size_t name_len = eq - (arg_str + 2);
+                if (name_len >= sizeof(opt_name)) name_len = sizeof(opt_name) - 1;
+                strncpy(opt_name, arg_str + 2, name_len);
+                opt_name[name_len] = '\0';
+                opt_val = eq + 1;
+            } else {
+                strncpy(opt_name, arg_str + 2, sizeof(opt_name) - 1);
+                opt_name[sizeof(opt_name) - 1] = '\0';
+            }
+
+            /* Find option definition */
+            zval *opt_def = zend_hash_str_find(Z_ARRVAL_P(opt_defs), opt_name, strlen(opt_name));
+            if (opt_def) {
+                zval *req = zend_hash_str_find(Z_ARRVAL_P(opt_def), "requiresValue", 13);
+                if (req && Z_TYPE_P(req) == IS_TRUE) {
+                    if (opt_val) {
+                        zval zv;
+                        ZVAL_STRING(&zv, opt_val);
+                        zend_hash_str_update(Z_ARRVAL_P(opt_values), opt_name, strlen(opt_name), &zv);
+                    }
+                } else {
+                    zval zv;
+                    ZVAL_TRUE(&zv);
+                    zend_hash_str_update(Z_ARRVAL_P(opt_values), opt_name, strlen(opt_name), &zv);
+                }
+            }
+            continue;
+        }
+
+        /* Short option -x or -x value */
+        if (arg_len >= 2 && arg_str[0] == '-' && arg_str[1] != '-') {
+            char shortcut[2] = {arg_str[1], '\0'};
+
+            /* Find option by shortcut */
+            zval *opt;
+            zend_string *key;
+            ZEND_HASH_FOREACH_STR_KEY_VAL(Z_ARRVAL_P(opt_defs), key, opt) {
+                zval *sc = zend_hash_str_find(Z_ARRVAL_P(opt), "shortcut", 8);
+                if (sc && Z_TYPE_P(sc) == IS_STRING && strcmp(Z_STRVAL_P(sc), shortcut) == 0) {
+                    zval *req = zend_hash_str_find(Z_ARRVAL_P(opt), "requiresValue", 13);
+                    if (req && Z_TYPE_P(req) == IS_TRUE && arg_len > 2) {
+                        /* Value attached: -xVALUE */
+                        zval zv;
+                        ZVAL_STRING(&zv, arg_str + 2);
+                        zend_hash_update(Z_ARRVAL_P(opt_values), key, &zv);
+                    } else {
+                        zval zv;
+                        ZVAL_TRUE(&zv);
+                        zend_hash_update(Z_ARRVAL_P(opt_values), key, &zv);
+                    }
+                    break;
+                }
+            } ZEND_HASH_FOREACH_END();
+            continue;
+        }
+
+        /* Positional argument */
+        if (Z_TYPE_P(arg_defs) == IS_ARRAY) {
+            int idx = 0;
+            zval *arg_def;
+            zend_string *key;
+            ZEND_HASH_FOREACH_STR_KEY_VAL(Z_ARRVAL_P(arg_defs), key, arg_def) {
+                (void)arg_def; /* Unused, only key is needed */
+                if (idx == positional_index) {
+                    zval zv;
+                    ZVAL_STRING(&zv, arg_str);
+                    zend_hash_update(Z_ARRVAL_P(arg_values), key, &zv);
+                    positional_index++;
+                    break;
+                }
+                idx++;
+            } ZEND_HASH_FOREACH_END();
+        }
+    } ZEND_HASH_FOREACH_END();
+
+    /* Check required arguments */
+    if (Z_TYPE_P(arg_defs) == IS_ARRAY) {
+        zval *arg_def;
+        zend_string *key;
+        ZEND_HASH_FOREACH_STR_KEY_VAL(Z_ARRVAL_P(arg_defs), key, arg_def) {
+            zval *req = zend_hash_str_find(Z_ARRVAL_P(arg_def), "required", 8);
+            if (req && Z_TYPE_P(req) == IS_TRUE) {
+                zval *val = zend_hash_find(Z_ARRVAL_P(arg_values), key);
+                if (!val || Z_TYPE_P(val) == IS_NULL) {
+                    php_printf("\033[31mError: Missing required argument '%s'\033[0m\n\n", ZSTR_VAL(key));
+                    command_print_help(ZEND_THIS);
+                    RETURN_LONG(1);
+                }
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    /* Call execute() */
+    zval exec_retval;
+    zend_long result = 0;
+
+    zend_function *execute_fn = zend_hash_str_find_ptr(&Z_OBJCE_P(ZEND_THIS)->function_table, "execute", sizeof("execute") - 1);
+    if (execute_fn) {
+        zend_call_known_instance_method(execute_fn, Z_OBJ_P(ZEND_THIS), &exec_retval, 0, NULL);
+
+        if (Z_TYPE(exec_retval) == IS_LONG) {
+            result = Z_LVAL(exec_retval);
+        }
+        zval_ptr_dtor(&exec_retval);
+    }
+
+    RETURN_LONG(result);
+}
+/* }}} */
+
+/* Command arginfo */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_command_construct, 0, 0, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_command_set_name, 0, 1, Signalforge\\Terminal\\Command, 0)
+    ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_command_set_description, 0, 1, Signalforge\\Terminal\\Command, 0)
+    ZEND_ARG_TYPE_INFO(0, description, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_command_add_argument, 0, 1, Signalforge\\Terminal\\Command, 0)
+    ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO(0, description, IS_STRING, 1)
+    ZEND_ARG_TYPE_INFO(0, required, _IS_BOOL, 0)
+    ZEND_ARG_TYPE_INFO(0, default, IS_STRING, 1)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_command_add_option, 0, 1, Signalforge\\Terminal\\Command, 0)
+    ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO(0, shortcut, IS_STRING, 1)
+    ZEND_ARG_TYPE_INFO(0, description, IS_STRING, 1)
+    ZEND_ARG_TYPE_INFO(0, requiresValue, _IS_BOOL, 0)
+    ZEND_ARG_TYPE_INFO(0, default, IS_STRING, 1)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_command_get_argument, 0, 0, 1)
+    ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_command_get_option, 0, 0, 1)
+    ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_command_output, 0, 0, 1)
+    ZEND_ARG_TYPE_INFO(0, message, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_command_newline, 0, 0, 0)
+    ZEND_ARG_TYPE_INFO(0, count, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_command_run, 0, 0, IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, argv, IS_ARRAY, 1)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_command_execute, 0, 0, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_command_configure, 0, 0, 0)
+ZEND_END_ARG_INFO()
+
+static const zend_function_entry command_methods[] = {
+    PHP_ME(Command, __construct, arginfo_command_construct, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, setName, arginfo_command_set_name, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, setDescription, arginfo_command_set_description, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, addArgument, arginfo_command_add_argument, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, addOption, arginfo_command_add_option, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, getArgument, arginfo_command_get_argument, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, getOption, arginfo_command_get_option, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, info, arginfo_command_output, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, success, arginfo_command_output, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, error, arginfo_command_output, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, warning, arginfo_command_output, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, comment, arginfo_command_output, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, newLine, arginfo_command_newline, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, showHelp, arginfo_void, ZEND_ACC_PUBLIC)
+    PHP_ME(Command, run, arginfo_command_run, ZEND_ACC_PUBLIC)
+    PHP_ABSTRACT_ME(Command, configure, arginfo_command_configure)
+    PHP_ABSTRACT_ME(Command, execute, arginfo_command_execute)
+    PHP_FE_END
+};
+
+/* ============================================================================
+ * COLOR CLASS (with string constants)
+ * ============================================================================ */
+
+static const zend_function_entry color_methods[] = {
+    PHP_FE_END
+};
+
+/* ============================================================================
  * MODULE INITIALIZATION
  * ============================================================================ */
 
@@ -2789,6 +3466,45 @@ PHP_MINIT_FUNCTION(terminal)
     loader_handlers.offset = XtOffsetOf(loader_t, std);
     loader_handlers.free_obj = loader_free;
     TERMINAL_G(loader_ce) = terminal_loader_ce;
+
+    /* Register Color class with string constants */
+    INIT_NS_CLASS_ENTRY(ce, "Signalforge\\Terminal", "Color", color_methods);
+    terminal_color_ce = zend_register_internal_class(&ce);
+    terminal_color_ce->ce_flags |= ZEND_ACC_FINAL;
+
+    /* Color constants */
+    zend_declare_class_constant_string(terminal_color_ce, "BLACK", sizeof("BLACK") - 1, "black");
+    zend_declare_class_constant_string(terminal_color_ce, "RED", sizeof("RED") - 1, "red");
+    zend_declare_class_constant_string(terminal_color_ce, "GREEN", sizeof("GREEN") - 1, "green");
+    zend_declare_class_constant_string(terminal_color_ce, "YELLOW", sizeof("YELLOW") - 1, "yellow");
+    zend_declare_class_constant_string(terminal_color_ce, "BLUE", sizeof("BLUE") - 1, "blue");
+    zend_declare_class_constant_string(terminal_color_ce, "MAGENTA", sizeof("MAGENTA") - 1, "magenta");
+    zend_declare_class_constant_string(terminal_color_ce, "CYAN", sizeof("CYAN") - 1, "cyan");
+    zend_declare_class_constant_string(terminal_color_ce, "WHITE", sizeof("WHITE") - 1, "white");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_BLACK", sizeof("BRIGHT_BLACK") - 1, "bright_black");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_RED", sizeof("BRIGHT_RED") - 1, "bright_red");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_GREEN", sizeof("BRIGHT_GREEN") - 1, "bright_green");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_YELLOW", sizeof("BRIGHT_YELLOW") - 1, "bright_yellow");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_BLUE", sizeof("BRIGHT_BLUE") - 1, "bright_blue");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_MAGENTA", sizeof("BRIGHT_MAGENTA") - 1, "bright_magenta");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_CYAN", sizeof("BRIGHT_CYAN") - 1, "bright_cyan");
+    zend_declare_class_constant_string(terminal_color_ce, "BRIGHT_WHITE", sizeof("BRIGHT_WHITE") - 1, "bright_white");
+    zend_declare_class_constant_string(terminal_color_ce, "DEFAULT_COLOR", sizeof("DEFAULT_COLOR") - 1, "default");
+    TERMINAL_G(color_ce) = terminal_color_ce;
+
+    /* Register Command abstract class */
+    INIT_NS_CLASS_ENTRY(ce, "Signalforge\\Terminal", "Command", command_methods);
+    terminal_command_ce = zend_register_internal_class(&ce);
+    terminal_command_ce->ce_flags |= ZEND_ACC_ABSTRACT;
+
+    /* Command properties */
+    zend_declare_property_string(terminal_command_ce, "_name", sizeof("_name") - 1, "", ZEND_ACC_PROTECTED);
+    zend_declare_property_string(terminal_command_ce, "_description", sizeof("_description") - 1, "", ZEND_ACC_PROTECTED);
+    zend_declare_property_null(terminal_command_ce, "_arguments", sizeof("_arguments") - 1, ZEND_ACC_PROTECTED);
+    zend_declare_property_null(terminal_command_ce, "_options", sizeof("_options") - 1, ZEND_ACC_PROTECTED);
+    zend_declare_property_null(terminal_command_ce, "_argValues", sizeof("_argValues") - 1, ZEND_ACC_PROTECTED);
+    zend_declare_property_null(terminal_command_ce, "_optValues", sizeof("_optValues") - 1, ZEND_ACC_PROTECTED);
+    TERMINAL_G(command_ce) = terminal_command_ce;
 
     /* Initialize terminal state */
     terminal_init_state();

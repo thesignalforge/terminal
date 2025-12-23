@@ -200,6 +200,45 @@ The extension automatically degrades colors based on terminal capabilities:
 - 256-color terminals: Closest palette match
 - Basic terminals: Closest 16-color match
 
+#### Using the Color Class
+
+Instead of magic strings, use the `Color` class for type-safe color constants:
+
+```php
+use Signalforge\Terminal\Color;
+use Signalforge\Terminal\Terminal;
+
+// Use Color constants instead of strings
+echo Terminal::style("Error!", ['fg' => Color::RED, 'bold' => true]);
+echo Terminal::style("Success!", ['fg' => Color::GREEN]);
+echo Terminal::style("Warning!", ['fg' => Color::YELLOW]);
+echo Terminal::style("Info", ['fg' => Color::CYAN]);
+
+// Bright variants
+echo Terminal::style("Highlighted", ['fg' => Color::BRIGHT_WHITE, 'bg' => Color::BLUE]);
+
+// All available colors
+echo Terminal::style("Text", ['fg' => Color::BLACK]);
+echo Terminal::style("Text", ['fg' => Color::RED]);
+echo Terminal::style("Text", ['fg' => Color::GREEN]);
+echo Terminal::style("Text", ['fg' => Color::YELLOW]);
+echo Terminal::style("Text", ['fg' => Color::BLUE]);
+echo Terminal::style("Text", ['fg' => Color::MAGENTA]);
+echo Terminal::style("Text", ['fg' => Color::CYAN]);
+echo Terminal::style("Text", ['fg' => Color::WHITE]);
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_BLACK]);   // Gray
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_RED]);
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_GREEN]);
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_YELLOW]);
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_BLUE]);
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_MAGENTA]);
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_CYAN]);
+echo Terminal::style("Text", ['fg' => Color::BRIGHT_WHITE]);
+echo Terminal::style("Text", ['fg' => Color::DEFAULT_COLOR]);  // Reset to default
+```
+
+Using the `Color` class provides IDE autocompletion and prevents typos in color names.
+
 ---
 
 ### 2. Tables
@@ -673,6 +712,238 @@ Terminal::onResize(function() {
 
 ---
 
+### 8. Building CLI Commands
+
+The `Command` abstract class provides a structured way to build command-line applications with argument parsing, option handling, and automatic help generation.
+
+#### Basic Command Structure
+
+```php
+#!/usr/bin/env php
+<?php
+use Signalforge\Terminal\Command;
+
+class GreetCommand extends Command
+{
+    public function configure(): void
+    {
+        $this->setName('greet')
+             ->setDescription('Greets a person with a friendly message')
+             ->addArgument('name', 'The person to greet', required: true)
+             ->addOption('yell', 'y', 'Yell the greeting');
+    }
+
+    public function execute(): int
+    {
+        $name = $this->getArgument('name');
+        $greeting = "Hello, {$name}!";
+
+        if ($this->getOption('yell')) {
+            $greeting = strtoupper($greeting);
+        }
+
+        $this->success($greeting);
+        return 0;
+    }
+}
+
+// Run the command
+$cmd = new GreetCommand();
+exit($cmd->run());
+```
+
+Usage:
+
+```
+$ ./greet.php World
+Hello, World!
+
+$ ./greet.php World --yell
+HELLO, WORLD!
+
+$ ./greet.php --help
+Description:
+  Greets a person with a friendly message
+
+Usage:
+  greet [options] <name>
+
+Arguments:
+  name                 The person to greet
+
+Options:
+  -h, --help           Display this help message
+  -y, --yell           Yell the greeting
+```
+
+#### Arguments and Options
+
+**Arguments** are positional values passed to your command:
+
+```php
+public function configure(): void
+{
+    // Required argument
+    $this->addArgument('filename', 'The file to process', required: true);
+
+    // Optional argument with default
+    $this->addArgument('output', 'Output file', required: false, default: 'output.txt');
+}
+
+public function execute(): int
+{
+    $input = $this->getArgument('filename');   // Always set (required)
+    $output = $this->getArgument('output');    // 'output.txt' if not provided
+    // ...
+}
+```
+
+**Options** are flags with optional values:
+
+```php
+public function configure(): void
+{
+    // Boolean flag (--verbose or -v)
+    $this->addOption('verbose', 'v', 'Enable verbose output');
+
+    // Option that requires a value (--format=json or -f json)
+    $this->addOption('format', 'f', 'Output format', requiresValue: true, default: 'text');
+
+    // Long option only (--dry-run)
+    $this->addOption('dry-run', null, 'Perform a dry run');
+}
+
+public function execute(): int
+{
+    if ($this->getOption('verbose')) {
+        $this->comment('Verbose mode enabled');
+    }
+
+    $format = $this->getOption('format');  // 'text', 'json', etc.
+    // ...
+}
+```
+
+#### Output Helpers
+
+Commands have built-in methods for styled output:
+
+```php
+public function execute(): int
+{
+    $this->info('Processing files...');       // Normal text
+    $this->success('All files processed!');   // Green text
+    $this->warning('Some files skipped');     // Yellow text
+    $this->error('Failed to process foo.txt'); // Red text
+    $this->comment('This is a comment');      // Dim/gray text
+    $this->newLine(2);                        // Add blank lines
+
+    return 0;
+}
+```
+
+```
+Processing files...
+All files processed!
+Some files skipped
+Failed to process foo.txt
+This is a comment
+```
+
+#### Complete Command Example
+
+Here's a more complete example of a file processing command:
+
+```php
+#!/usr/bin/env php
+<?php
+use Signalforge\Terminal\Command;
+use Signalforge\Terminal\Terminal;
+
+class ProcessFilesCommand extends Command
+{
+    public function configure(): void
+    {
+        $this->setName('process')
+             ->setDescription('Process files in a directory')
+             ->addArgument('directory', 'Directory to process', true)
+             ->addOption('recursive', 'r', 'Process subdirectories')
+             ->addOption('pattern', 'p', 'File pattern to match', true, '*.txt')
+             ->addOption('dry-run', null, 'Show what would be done')
+             ->addOption('verbose', 'v', 'Show detailed output');
+    }
+
+    public function execute(): int
+    {
+        $dir = $this->getArgument('directory');
+        $pattern = $this->getOption('pattern');
+        $recursive = $this->getOption('recursive');
+        $dryRun = $this->getOption('dry-run');
+        $verbose = $this->getOption('verbose');
+
+        if (!is_dir($dir)) {
+            $this->error("Directory not found: {$dir}");
+            return 1;
+        }
+
+        $this->info("Processing {$pattern} in {$dir}");
+        if ($dryRun) {
+            $this->warning('Dry run mode - no changes will be made');
+        }
+
+        $files = glob("{$dir}/{$pattern}");
+
+        // Show progress
+        $bar = Terminal::progressBar(count($files), 'Processing');
+
+        foreach ($files as $file) {
+            if ($verbose) {
+                $this->comment("  Processing: {$file}");
+            }
+
+            if (!$dryRun) {
+                // Actually process the file
+                $this->processFile($file);
+            }
+
+            $bar->advance();
+        }
+
+        $bar->finish('Done!');
+        $this->newLine();
+        $this->success(sprintf('Processed %d files', count($files)));
+
+        return 0;
+    }
+
+    private function processFile(string $file): void
+    {
+        // Your file processing logic here
+    }
+}
+
+$cmd = new ProcessFilesCommand();
+exit($cmd->run());
+```
+
+Usage:
+
+```bash
+# Process .txt files in the current directory
+./process.php ./data
+
+# Process recursively with verbose output
+./process.php ./data -rv
+
+# Process specific pattern, dry run
+./process.php ./data --pattern="*.log" --dry-run
+
+# Show help
+./process.php --help
+```
+
+---
+
 ## Complete Example: System Monitor
 
 Here's a complete example that combines multiple features:
@@ -856,6 +1127,49 @@ When the user presses Ctrl+Z:
 | `text(string)` | Update message |
 | `stop(?string)` | Stop with optional final message |
 
+### Color Class (Constants)
+
+| Constant | Value |
+|----------|-------|
+| `Color::BLACK` | `"black"` |
+| `Color::RED` | `"red"` |
+| `Color::GREEN` | `"green"` |
+| `Color::YELLOW` | `"yellow"` |
+| `Color::BLUE` | `"blue"` |
+| `Color::MAGENTA` | `"magenta"` |
+| `Color::CYAN` | `"cyan"` |
+| `Color::WHITE` | `"white"` |
+| `Color::BRIGHT_BLACK` | `"bright_black"` |
+| `Color::BRIGHT_RED` | `"bright_red"` |
+| `Color::BRIGHT_GREEN` | `"bright_green"` |
+| `Color::BRIGHT_YELLOW` | `"bright_yellow"` |
+| `Color::BRIGHT_BLUE` | `"bright_blue"` |
+| `Color::BRIGHT_MAGENTA` | `"bright_magenta"` |
+| `Color::BRIGHT_CYAN` | `"bright_cyan"` |
+| `Color::BRIGHT_WHITE` | `"bright_white"` |
+| `Color::DEFAULT_COLOR` | `"default"` |
+
+### Command Class (Abstract)
+
+| Method | Description |
+|--------|-------------|
+| `setName(string): self` | Set command name |
+| `setDescription(string): self` | Set command description |
+| `addArgument(string, ?string, bool, ?string): self` | Add positional argument |
+| `addOption(string, ?string, ?string, bool, ?string): self` | Add option flag |
+| `getArgument(string): mixed` | Get argument value |
+| `getOption(string): mixed` | Get option value |
+| `info(string): void` | Output info message |
+| `success(string): void` | Output green success message |
+| `error(string): void` | Output red error message |
+| `warning(string): void` | Output yellow warning message |
+| `comment(string): void` | Output dim comment text |
+| `newLine(int): void` | Output blank lines |
+| `showHelp(): void` | Display help text |
+| `run(?array): int` | Parse args and execute |
+| `configure(): void` | **Abstract** - Define arguments/options |
+| `execute(): int` | **Abstract** - Run command logic |
+
 ---
 
 ## Troubleshooting
@@ -908,7 +1222,7 @@ MIT License — See LICENSE file for details.
 
 ## Credits
 
-Built for [Workplace.hr](https://workplace.hr) by Signalforge.
+Built by Signalforge.
 
 Inspired by:
 - [Rich](https://github.com/Textualize/rich) (Python)

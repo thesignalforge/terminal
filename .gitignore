@@ -1,0 +1,49 @@
+# Build artifacts
+.libs/
+modules/
+build/
+autom4te.cache/
+
+# Compiled files
+*.lo
+*.la
+*.o
+*.so
+
+# Configuration artifacts
+config.h
+config.h.in
+config.log
+config.nice
+config.status
+configure
+configure.ac
+acinclude.m4
+aclocal.m4
+libtool
+Makefile
+Makefile.fragments
+Makefile.global
+Makefile.objects
+run-tests.php
+install-sh
+missing
+mkinstalldirs
+
+# Dependency files
+*.dep
+
+# Test artifacts
+tests/*.diff
+tests/*.exp
+tests/*.log
+tests/*.out
+tests/*.php
+tests/*.sh
+tmp-php.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
